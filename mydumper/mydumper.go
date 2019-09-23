@@ -31,6 +31,7 @@ import (
 	"github.com/pingcap/dm/pkg/log"
 	"github.com/pingcap/dm/pkg/terror"
 
+	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/siddontang/go/sync2"
 	"go.uber.org/zap"
@@ -62,7 +63,7 @@ func (m *Mydumper) Init() error {
 }
 
 // Process implements Unit.Process
-func (m *Mydumper) Process(ctx context.Context, pr chan pb.ProcessResult) {
+func (m *Mydumper) Process(ctx context.Context, pr chan unit.ProcessResult) {
 	mydumperExitWithErrorCounter.WithLabelValues(m.cfg.Name).Add(0)
 
 	failpoint.Inject("dumpUnitProcessWithError", func(val failpoint.Value) {
@@ -71,15 +72,15 @@ func (m *Mydumper) Process(ctx context.Context, pr chan pb.ProcessResult) {
 		if !ok {
 			msg = "unknown process error"
 		}
-		pr <- pb.ProcessResult{
+		pr <- unit.ProcessResult{
 			IsCanceled: false,
-			Errors:     []*pb.ProcessError{unit.NewProcessError(pb.ErrorType_UnknownError, msg)},
+			Errors:     []*unit.ProcessError{unit.NewProcessError(pb.ErrorType_UnknownError, errors.New(msg))},
 		}
 		failpoint.Return()
 	})
 
 	begin := time.Now()
-	errs := make([]*pb.ProcessError, 0, 1)
+	errs := make([]*unit.ProcessError, 0, 1)
 	isCanceled := false
 
 	failpoint.Inject("dumpUnitProcessForever", func() {
@@ -100,7 +101,7 @@ func (m *Mydumper) Process(ctx context.Context, pr chan pb.ProcessResult) {
 
 	if err != nil {
 		mydumperExitWithErrorCounter.WithLabelValues(m.cfg.Name).Inc()
-		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, fmt.Sprintf("%s. %s", err.Error(), output)))
+		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, fmt.Errorf("%s. %s", err.Error(), output)))
 	} else {
 		select {
 		case <-ctx.Done():
@@ -111,7 +112,7 @@ func (m *Mydumper) Process(ctx context.Context, pr chan pb.ProcessResult) {
 
 	m.logger.Info("dump data finished", zap.Duration("cost time", time.Since(begin)))
 
-	pr <- pb.ProcessResult{
+	pr <- unit.ProcessResult{
 		IsCanceled: isCanceled,
 		Errors:     errs,
 	}
@@ -195,7 +196,7 @@ func (m *Mydumper) Pause() {
 }
 
 // Resume implements Unit.Resume
-func (m *Mydumper) Resume(ctx context.Context, pr chan pb.ProcessResult) {
+func (m *Mydumper) Resume(ctx context.Context, pr chan unit.ProcessResult) {
 	if m.closed.Get() {
 		m.logger.Warn("try to resume, but already closed")
 		return

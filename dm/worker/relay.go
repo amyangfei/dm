@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pingcap/dm/dm/pb"
+	"github.com/pingcap/dm/dm/unit"
 	"github.com/pingcap/dm/pkg/log"
 	"github.com/pingcap/dm/pkg/streamer"
 	"github.com/pingcap/dm/pkg/terror"
@@ -158,7 +159,7 @@ func (h *realRelayHolder) Close() {
 
 func (h *realRelayHolder) run() {
 	h.ctx, h.cancel = context.WithCancel(context.Background())
-	pr := make(chan pb.ProcessResult, 1)
+	pr := make(chan unit.ProcessResult, 1)
 	h.setResult(nil) // clear previous result
 	h.setStage(pb.Stage_Running)
 
@@ -166,9 +167,9 @@ func (h *realRelayHolder) run() {
 
 	for len(pr) > 0 {
 		r := <-pr
-		h.setResult(&r)
+		h.setResult(r.PBCompatible())
 		for _, err := range r.Errors {
-			h.l.Error("process error", zap.Stringer("type", err))
+			h.l.Error("process error", zap.Error(err.Err))
 		}
 	}
 

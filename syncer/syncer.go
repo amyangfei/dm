@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/parser"
 	"github.com/pingcap/parser/ast"
@@ -186,7 +185,7 @@ type Syncer struct {
 	onlineDDL  OnlinePlugin
 
 	// record process error rather than log.Fatal
-	runFatalChan chan *pb.ProcessError
+	runFatalChan chan *unit.ProcessError
 	// record whether error occurred when execute SQLs
 	execErrorDetected sync2.AtomicBool
 
@@ -532,7 +531,7 @@ func (s *Syncer) resetDBs() error {
 }
 
 // Process implements the dm.Unit interface.
-func (s *Syncer) Process(ctx context.Context, pr chan pb.ProcessResult) {
+func (s *Syncer) Process(ctx context.Context, pr chan unit.ProcessResult) {
 	syncerExitWithErrorCounter.WithLabelValues(s.cfg.Name).Add(0)
 
 	newCtx, cancel := context.WithCancel(ctx)
@@ -541,9 +540,9 @@ func (s *Syncer) Process(ctx context.Context, pr chan pb.ProcessResult) {
 	// create new done chan
 	s.done = make(chan struct{})
 
-	runFatalChan := make(chan *pb.ProcessError, s.cfg.WorkerCount+1)
+	runFatalChan := make(chan *unit.ProcessError, s.cfg.WorkerCount+1)
 	s.runFatalChan = runFatalChan
-	errs := make([]*pb.ProcessError, 0, 2)
+	errs := make([]*unit.ProcessError, 0, 2)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -588,7 +587,7 @@ func (s *Syncer) Process(ctx context.Context, pr chan pb.ProcessResult) {
 
 	if err != nil {
 		syncerExitWithErrorCounter.WithLabelValues(s.cfg.Name).Inc()
-		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, errors.ErrorStack(err)))
+		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, err))
 	}
 
 	isCanceled := false
@@ -611,7 +610,7 @@ func (s *Syncer) Process(ctx context.Context, pr chan pb.ProcessResult) {
 		s.tctx.L().Warn("something wrong with rollback global checkpoint", zap.Stringer("previous position", prePos), zap.Stringer("current position", currPos))
 	}
 
-	pr <- pb.ProcessResult{
+	pr <- unit.ProcessResult{
 		IsCanceled: isCanceled,
 		Errors:     errs,
 	}
@@ -904,7 +903,7 @@ func (s *Syncer) syncDDL(ctx *tcontext.Context, queueBucket string, db *Conn, dd
 		s.jobWg.Done()
 		if err != nil {
 			s.execErrorDetected.Set(true)
-			s.runFatalChan <- unit.NewProcessError(pb.ErrorType_ExecSQL, errors.ErrorStack(err))
+			s.runFatalChan <- unit.NewProcessError(pb.ErrorType_ExecSQL, err)
 			continue
 		}
 		s.addCount(true, queueBucket, sqlJob.tp, int64(len(sqlJob.ddls)))
@@ -934,7 +933,7 @@ func (s *Syncer) sync(ctx *tcontext.Context, queueBucket string, db *Conn, jobCh
 
 	fatalF := func(err error, errType pb.ErrorType) {
 		s.execErrorDetected.Set(true)
-		s.runFatalChan <- unit.NewProcessError(errType, errors.ErrorStack(err))
+		s.runFatalChan <- unit.NewProcessError(errType, err)
 		clearF()
 	}
 
@@ -2232,7 +2231,7 @@ func (s *Syncer) Pause() {
 }
 
 // Resume resumes the paused process
-func (s *Syncer) Resume(ctx context.Context, pr chan pb.ProcessResult) {
+func (s *Syncer) Resume(ctx context.Context, pr chan unit.ProcessResult) {
 	if s.isClosed() {
 		s.tctx.L().Warn("try to resume, but already closed")
 		return
@@ -2243,10 +2242,10 @@ func (s *Syncer) Resume(ctx context.Context, pr chan pb.ProcessResult) {
 	// reset database conns
 	err := s.resetDBs()
 	if err != nil {
-		pr <- pb.ProcessResult{
+		pr <- unit.ProcessResult{
 			IsCanceled: false,
-			Errors: []*pb.ProcessError{
-				unit.NewProcessError(pb.ErrorType_UnknownError, errors.ErrorStack(err)),
+			Errors: []*unit.ProcessError{
+				unit.NewProcessError(pb.ErrorType_UnknownError, err),
 			},
 		}
 		return

@@ -16,6 +16,8 @@ package unit
 import (
 	"context"
 
+	"github.com/pingcap/errors"
+
 	"github.com/pingcap/dm/dm/config"
 	"github.com/pingcap/dm/dm/pb"
 )
@@ -31,13 +33,13 @@ type Unit interface {
 	// Process processes sub task
 	// When ctx.Done, stops the process and returns
 	// When not in processing, call Process to continue or resume the process
-	Process(ctx context.Context, pr chan pb.ProcessResult)
+	Process(ctx context.Context, pr chan ProcessResult)
 	// Close shuts down the process and closes the unit, after that can not call Process to resume
 	Close()
 	// Pause pauses the process, it can be resumed later
 	Pause()
 	// Resume resumes the paused process
-	Resume(ctx context.Context, pr chan pb.ProcessResult)
+	Resume(ctx context.Context, pr chan ProcessResult)
 	// Update updates the configuration
 	Update(cfg *config.SubTaskConfig) error
 
@@ -52,11 +54,45 @@ type Unit interface {
 	IsFreshTask() (bool, error)
 }
 
+// ProcessError is used to pass error in DM worker internal system, it acts like
+// an internal abstraction of `pb.ProcessError`, while the latter one is used
+// among different DM components across wire.
+type ProcessError struct {
+	Type pb.ErrorType
+	Err  error
+}
+
 // NewProcessError creates a new ProcessError
-// we can refine to add error scope field if needed
-func NewProcessError(errorType pb.ErrorType, msg string) *pb.ProcessError {
-	return &pb.ProcessError{
+func NewProcessError(errorType pb.ErrorType, err error) *ProcessError {
+	return &ProcessError{
 		Type: errorType,
-		Msg:  msg,
+		Err:  err,
+	}
+}
+
+func (pe *ProcessError) PBCompatible() *pb.ProcessError {
+	return &pb.ProcessError{
+		Type: pe.Type,
+		Msg:  errors.ErrorStack(pe.Err),
+	}
+}
+
+// ProcessResult holds the result produced by a dm unit, it acts like an internal
+// abstraction of `pb.ProcessResult`
+type ProcessResult struct {
+	IsCanceled bool
+	Errors     []*ProcessError
+	Detail     []byte
+}
+
+func (pr *ProcessResult) PBCompatible() *pb.ProcessResult {
+	errs := make([]*pb.ProcessError, 0, len(pr.Errors))
+	for _, err := range pr.Errors {
+		errs = append(errs, err.PBCompatible())
+	}
+	return &pb.ProcessResult{
+		IsCanceled: pr.IsCanceled,
+		Errors:     errs,
+		Detail:     pr.Detail,
 	}
 }

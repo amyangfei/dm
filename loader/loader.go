@@ -118,7 +118,7 @@ func (w *Worker) Close() {
 	closeConn(w.conn)
 }
 
-func (w *Worker) run(ctx context.Context, fileJobQueue chan *fileJob, workerWg *sync.WaitGroup, runFatalChan chan *pb.ProcessError) {
+func (w *Worker) run(ctx context.Context, fileJobQueue chan *fileJob, workerWg *sync.WaitGroup, runFatalChan chan *unit.ProcessError) {
 	atomic.StoreInt64(&w.closed, 0)
 	defer workerWg.Done()
 
@@ -158,7 +158,7 @@ func (w *Worker) run(ctx context.Context, fileJobQueue chan *fileJob, workerWg *
 				if err := w.conn.executeSQL(ctctx, sqls); err != nil {
 					// expect pause rather than exit
 					err = terror.WithScope(terror.Annotatef(err, "file %s", job.file), terror.ScopeDownstream)
-					runFatalChan <- unit.NewProcessError(pb.ErrorType_ExecSQL, errors.ErrorStack(err))
+					runFatalChan <- unit.NewProcessError(pb.ErrorType_ExecSQL, err)
 					return
 				}
 				w.loader.finishedDataSize.Add(job.offset - job.lastOffset)
@@ -184,7 +184,7 @@ func (w *Worker) run(ctx context.Context, fileJobQueue chan *fileJob, workerWg *
 			if err := w.restoreDataFile(ctx, filepath.Join(w.cfg.Dir, job.dataFile), job.offset, job.info); err != nil {
 				// expect pause rather than exit
 				err = terror.Annotatef(err, "restore data file (%v) failed", job.dataFile)
-				runFatalChan <- unit.NewProcessError(pb.ErrorType_UnknownError, errors.ErrorStack(err))
+				runFatalChan <- unit.NewProcessError(pb.ErrorType_UnknownError, err)
 				return
 			}
 		}
@@ -348,7 +348,7 @@ type Loader struct {
 	metaBinlog       sync2.AtomicString
 
 	// record process error rather than log.Fatal
-	runFatalChan chan *pb.ProcessError
+	runFatalChan chan *unit.ProcessError
 }
 
 // NewLoader creates a new Loader.
@@ -413,7 +413,7 @@ func (l *Loader) Init() (err error) {
 }
 
 // Process implements Unit.Process
-func (l *Loader) Process(ctx context.Context, pr chan pb.ProcessResult) {
+func (l *Loader) Process(ctx context.Context, pr chan unit.ProcessResult) {
 	loaderExitWithErrorCounter.WithLabelValues(l.cfg.Name).Add(0)
 
 	newCtx, cancel := context.WithCancel(ctx)
@@ -422,14 +422,14 @@ func (l *Loader) Process(ctx context.Context, pr chan pb.ProcessResult) {
 	l.newFileJobQueue()
 	if err := l.getMydumpMetadata(); err != nil {
 		loaderExitWithErrorCounter.WithLabelValues(l.cfg.Name).Inc()
-		pr <- pb.ProcessResult{
-			Errors: []*pb.ProcessError{unit.NewProcessError(pb.ErrorType_UnknownError, errors.ErrorStack(err))},
+		pr <- unit.ProcessResult{
+			Errors: []*unit.ProcessError{unit.NewProcessError(pb.ErrorType_UnknownError, err)},
 		}
 		return
 	}
 
-	l.runFatalChan = make(chan *pb.ProcessError, 2*l.cfg.PoolSize)
-	errs := make([]*pb.ProcessError, 0, 2)
+	l.runFatalChan = make(chan *unit.ProcessError, 2*l.cfg.PoolSize)
+	errs := make([]*unit.ProcessError, 0, 2)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -447,7 +447,7 @@ func (l *Loader) Process(ctx context.Context, pr chan pb.ProcessResult) {
 
 	if err != nil {
 		loaderExitWithErrorCounter.WithLabelValues(l.cfg.Name).Inc()
-		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, errors.ErrorStack(err)))
+		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, err))
 	}
 
 	isCanceled := false
@@ -461,7 +461,7 @@ func (l *Loader) Process(ctx context.Context, pr chan pb.ProcessResult) {
 		// pause because of error occurred
 		l.Pause()
 	}
-	pr <- pb.ProcessResult{
+	pr <- unit.ProcessResult{
 		IsCanceled: isCanceled,
 		Errors:     errs,
 	}
@@ -587,7 +587,7 @@ func (l *Loader) Pause() {
 }
 
 // Resume resumes the paused process
-func (l *Loader) Resume(ctx context.Context, pr chan pb.ProcessResult) {
+func (l *Loader) Resume(ctx context.Context, pr chan unit.ProcessResult) {
 	if l.isClosed() {
 		l.tctx.L().Warn("try to resume, but already closed")
 		return

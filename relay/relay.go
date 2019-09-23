@@ -71,7 +71,7 @@ type Process interface {
 	// Init initial relat log unit
 	Init() (err error)
 	// Process run background logic of relay log unit
-	Process(ctx context.Context, pr chan pb.ProcessResult)
+	Process(ctx context.Context, pr chan unit.ProcessResult)
 	// SwitchMaster switches relay's master server
 	SwitchMaster(ctx context.Context, req *pb.SwitchRelayMasterRequest) error
 	// Migrate  resets  binlog position
@@ -83,7 +83,7 @@ type Process interface {
 	// Update updates config
 	Update(cfg *config.SubTaskConfig) error
 	// Resume resumes paused relay log process unit
-	Resume(ctx context.Context, pr chan pb.ProcessResult)
+	Resume(ctx context.Context, pr chan unit.ProcessResult)
 	// Pause pauses a running relay log process unit
 	Pause()
 	// Error returns error message if having one
@@ -186,14 +186,14 @@ func (r *Relay) Init() (err error) {
 }
 
 // Process implements the dm.Unit interface.
-func (r *Relay) Process(ctx context.Context, pr chan pb.ProcessResult) {
-	errs := make([]*pb.ProcessError, 0, 1)
+func (r *Relay) Process(ctx context.Context, pr chan unit.ProcessResult) {
+	errs := make([]*unit.ProcessError, 0, 1)
 	err := r.process(ctx)
 	if err != nil && errors.Cause(err) != replication.ErrSyncClosed {
 		relayExitWithErrorCounter.Inc()
 		r.tctx.L().Error("process exit", zap.Error(err))
 		// TODO: add specified error type instead of pb.ErrorType_UnknownError
-		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, errors.ErrorStack(err)))
+		errs = append(errs, unit.NewProcessError(pb.ErrorType_UnknownError, err))
 	}
 
 	isCanceled := false
@@ -204,7 +204,7 @@ func (r *Relay) Process(ctx context.Context, pr chan pb.ProcessResult) {
 		default:
 		}
 	}
-	pr <- pb.ProcessResult{
+	pr <- unit.ProcessResult{
 		IsCanceled: isCanceled,
 		Errors:     errs,
 	}
@@ -707,7 +707,7 @@ func (r *Relay) Pause() {
 }
 
 // Resume resumes the paused process
-func (r *Relay) Resume(ctx context.Context, pr chan pb.ProcessResult) {
+func (r *Relay) Resume(ctx context.Context, pr chan unit.ProcessResult) {
 	// do nothing now, re-process called `Process` from outer directly
 }
 

@@ -227,12 +227,12 @@ func (c *Checker) displayCheckingItems() string {
 }
 
 // Process implements Unit interface
-func (c *Checker) Process(ctx context.Context, pr chan pb.ProcessResult) {
+func (c *Checker) Process(ctx context.Context, pr chan unit.ProcessResult) {
 	cctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	isCanceled := false
-	errs := make([]*pb.ProcessError, 0, 1)
+	errs := make([]*unit.ProcessError, 0, 1)
 	result, _ := check.Do(cctx, c.checkList)
 	if !result.Summary.Passed {
 		errs = append(errs, unit.NewProcessError(pb.ErrorType_CheckFailed, "check was failed, please see detail"))
@@ -254,7 +254,7 @@ func (c *Checker) Process(ctx context.Context, pr chan pb.ProcessResult) {
 	c.result.detail = result
 	c.result.Unlock()
 
-	pr <- pb.ProcessResult{
+	pr <- unit.ProcessResult{
 		IsCanceled: isCanceled,
 		Errors:     errs,
 		Detail:     rawResult,
@@ -299,7 +299,7 @@ func (c *Checker) Pause() {
 }
 
 // Resume resumes the paused process
-func (c *Checker) Resume(ctx context.Context, pr chan pb.ProcessResult) {
+func (c *Checker) Resume(ctx context.Context, pr chan unit.ProcessResult) {
 	if c.closed.Get() {
 		c.logger.Warn("try to resume, but already closed")
 		return
