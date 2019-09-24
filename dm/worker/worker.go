@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/failpoint"
 	"github.com/siddontang/go/sync2"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -29,6 +28,7 @@ import (
 
 	"github.com/pingcap/dm/dm/config"
 	"github.com/pingcap/dm/dm/pb"
+	"github.com/pingcap/dm/dm/unit"
 	"github.com/pingcap/dm/pkg/log"
 	"github.com/pingcap/dm/pkg/terror"
 	"github.com/pingcap/dm/pkg/tracing"
@@ -696,15 +696,15 @@ func (w *Worker) copyConfigFromWorker(cfg *config.SubTaskConfig) {
 
 // getAllSubTaskStatus returns all subtask status of this worker, note the field
 // in subtask status is not completed, only includes `Name`, `Stage` and `Result` now
-func (w *Worker) getAllSubTaskStatus() map[string]*pb.SubTaskStatus {
+func (w *Worker) getAllSubTaskStatus() map[string]*unit.SubTaskStatus {
 	sts := w.subTaskHolder.getAllSubTasks()
 	result := make(map[string]*pb.SubTaskStatus, len(sts))
 	for name, st := range sts {
 		st.RLock()
-		result[name] = &pb.SubTaskStatus{
+		result[name] = &unit.SubTaskStatus{
 			Name:   name,
 			Stage:  st.stage,
-			Result: proto.Clone(st.result).(*pb.ProcessResult),
+			Result: st.result,
 		}
 		st.RUnlock()
 	}

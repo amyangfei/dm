@@ -77,8 +77,8 @@ type SubTask struct {
 	currUnit unit.Unit
 	prevUnit unit.Unit
 
-	stage  pb.Stage          // stage of current sub task
-	result *pb.ProcessResult // the process result, nil when is processing
+	stage  pb.Stage            // stage of current sub task
+	result *unit.ProcessResult // the process result, nil when is processing
 
 	// only support sync one DDL lock one time, refine if needed
 	DDLInfo      chan *pb.DDLInfo // DDL info pending to sync
@@ -209,8 +209,8 @@ func (st *SubTask) fetchResult(pr chan unit.ProcessResult) {
 	case <-st.ctx.Done():
 		return
 	case result := <-pr:
-		st.setResult(result.PBCompatible()) // save result
-		st.cancel()                         // dm-unit finished, canceled or error occurred, always cancel processing
+		st.setResult(&result) // save result
+		st.cancel()           // dm-unit finished, canceled or error occurred, always cancel processing
 
 		if len(result.Errors) == 0 && st.Stage() == pb.Stage_Paused {
 			return // paused by external request
@@ -363,7 +363,7 @@ func (st *SubTask) Stage() pb.Stage {
 	return st.stage
 }
 
-func (st *SubTask) setResult(result *pb.ProcessResult) {
+func (st *SubTask) setResult(result *unit.ProcessResult) {
 	st.Lock()
 	defer st.Unlock()
 	st.result = result
@@ -373,7 +373,7 @@ func (st *SubTask) setResult(result *pb.ProcessResult) {
 func (st *SubTask) Result() *pb.ProcessResult {
 	st.RLock()
 	defer st.RUnlock()
-	return proto.Clone(st.result).(*pb.ProcessResult)
+	return st.result.PBCompatible()
 }
 
 // Close stops the sub task
@@ -656,11 +656,11 @@ func (st *SubTask) unitTransWaitCondition() error {
 
 func (st *SubTask) fail(message string) {
 	st.setStage(pb.Stage_Paused)
-	st.setResult(&pb.ProcessResult{
-		Errors: []*pb.ProcessError{
+	st.setResult(&unit.ProcessResult{
+		Errors: []*unit.ProcessError{
 			{
 				Type: pb.ErrorType_UnknownError,
-				Msg:  message,
+				Err:  errors.New(message),
 			},
 		},
 	})

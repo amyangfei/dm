@@ -70,6 +70,7 @@ func NewProcessError(errorType pb.ErrorType, err error) *ProcessError {
 	}
 }
 
+// PBCompatible returns equivalent pb.ProcessError
 func (pe *ProcessError) PBCompatible() *pb.ProcessError {
 	return &pb.ProcessError{
 		Type: pe.Type,
@@ -79,12 +80,16 @@ func (pe *ProcessError) PBCompatible() *pb.ProcessError {
 
 // ProcessResult holds the result produced by a dm unit, it acts like an internal
 // abstraction of `pb.ProcessResult`
+// IsCanceled: indicates whether the process is canceled from external
+//             when Stop or Pause is requested from external, isCanceled will be true
+// Errors: includes all (potential) errors occured when processing
 type ProcessResult struct {
 	IsCanceled bool
 	Errors     []*ProcessError
 	Detail     []byte
 }
 
+// PBCompatible returns equivalent pb.ProcessResult
 func (pr *ProcessResult) PBCompatible() *pb.ProcessResult {
 	errs := make([]*pb.ProcessError, 0, len(pr.Errors))
 	for _, err := range pr.Errors {
@@ -95,4 +100,17 @@ func (pr *ProcessResult) PBCompatible() *pb.ProcessResult {
 		Errors:     errs,
 		Detail:     pr.Detail,
 	}
+}
+
+// SubTaskStatus represents status for a sub task, it acts like an internal abstraction
+// of `pb.SubTaskStatus`, but not contains each field of `pb.SubTaskStatus` currently.
+// name: sub task'name, when starting a sub task the name should be unique
+// stage: sub task's current stage
+// unit: sub task's current dm unit's UnitType
+// result: current unit's process result, when the stage is Running, no result
+type SubTaskStatus struct {
+	Name   string
+	Stage  pb.Stage
+	Unit   pb.UnitType
+	Result *ProcessResult
 }
