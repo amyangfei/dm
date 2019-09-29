@@ -396,6 +396,7 @@ func (s *Syncer) Init() (err error) {
 	rollbackHolder.Add(fr.FuncRollback{Name: "remove-active-realylog", Fn: s.removeActiveRelayLog})
 
 	s.reset()
+	syncerExitWithErrorCounter.WithLabelValues(s.cfg.Name).Add(0)
 	return nil
 }
 
@@ -533,8 +534,6 @@ func (s *Syncer) resetDBs() error {
 
 // Process implements the dm.Unit interface.
 func (s *Syncer) Process(ctx context.Context, pr chan pb.ProcessResult) {
-	syncerExitWithErrorCounter.WithLabelValues(s.cfg.Name).Add(0)
-
 	newCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

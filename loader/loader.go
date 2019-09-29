@@ -409,13 +409,12 @@ func (l *Loader) Init() (err error) {
 		}
 	}
 
+	loaderExitWithErrorCounter.WithLabelValues(l.cfg.Name).Add(0)
 	return nil
 }
 
 // Process implements Unit.Process
 func (l *Loader) Process(ctx context.Context, pr chan pb.ProcessResult) {
-	loaderExitWithErrorCounter.WithLabelValues(l.cfg.Name).Add(0)
-
 	newCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
